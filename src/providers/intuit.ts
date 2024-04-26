@@ -1,12 +1,12 @@
-import { TimeSpan, createDate } from "oslo";
 import { OAuth2Client } from "oslo/oauth2";
+import { TimeSpan, createDate } from "oslo";
 
-import type { OAuth2ProviderWithPKCE } from "../index.js";
+import type { OAuth2Provider } from "../index.js";
 
-const authorizeEndpoint = "https://apis.roblox.com/oauth/v1/authorize";
-const tokenEndpoint = "https://apis.roblox.com/oauth/v1/token";
+const authorizeEndpoint = "https://appcenter.intuit.com/connect/oauth2";
+const tokenEndpoint = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
 
-export class Roblox implements OAuth2ProviderWithPKCE {
+export class Intuit implements OAuth2Provider {
 	private client: OAuth2Client;
 	private clientSecret: string;
 
@@ -19,7 +19,6 @@ export class Roblox implements OAuth2ProviderWithPKCE {
 
 	public async createAuthorizationURL(
 		state: string,
-		codeVerifier: string,
 		options?: {
 			scopes?: string[];
 		}
@@ -27,37 +26,33 @@ export class Roblox implements OAuth2ProviderWithPKCE {
 		const scopes = options?.scopes ?? [];
 		return await this.client.createAuthorizationURL({
 			state,
-			codeVerifier,
 			scopes: [...scopes, "openid"]
 		});
 	}
 
-	public async validateAuthorizationCode(
-		code: string,
-		codeVerifier: string
-	): Promise<RobloxTokens> {
+	public async validateAuthorizationCode(code: string): Promise<IntuitTokens> {
 		const result = await this.client.validateAuthorizationCode<TokenResponseBody>(code, {
-			credentials: this.clientSecret,
-			codeVerifier,
-			authenticateWith: "request_body" // Roblox doesn't support HTTP basic auth
+			credentials: this.clientSecret
 		});
-		const tokens: RobloxTokens = {
+		const tokens: IntuitTokens = {
 			accessToken: result.access_token,
-			refreshToken: result.refresh_token,
 			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s")),
+			refreshToken: result.refresh_token,
+			refreshTokenExpiresAt: createDate(new TimeSpan(result.x_refresh_token_expires_in, "s")),
 			idToken: result.id_token
 		};
 		return tokens;
 	}
 
-	public async refreshAccessToken(refreshToken: string): Promise<RobloxTokens> {
-		const result = await this.client.refreshAccessToken<TokenResponseBody>(refreshToken, {
+	public async refreshAccessToken(accessToken: string): Promise<IntuitTokens> {
+		const result = await this.client.refreshAccessToken<TokenResponseBody>(accessToken, {
 			credentials: this.clientSecret
 		});
-		const tokens: RobloxTokens = {
+		const tokens: IntuitTokens = {
 			accessToken: result.access_token,
-			refreshToken: result.refresh_token,
 			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s")),
+			refreshToken: result.refresh_token,
+			refreshTokenExpiresAt: createDate(new TimeSpan(result.x_refresh_token_expires_in, "s")),
 			idToken: result.id_token
 		};
 		return tokens;
@@ -65,15 +60,18 @@ export class Roblox implements OAuth2ProviderWithPKCE {
 }
 
 interface TokenResponseBody {
-	access_token: string;
-	refresh_token: string;
+	token_type: "bearer";
 	expires_in: number;
+	refresh_token: string;
+	x_refresh_token_expires_in: number;
+	access_token: string;
 	id_token: string;
 }
 
-export interface RobloxTokens {
+export interface IntuitTokens {
 	accessToken: string;
-	refreshToken: string;
 	accessTokenExpiresAt: Date;
+	refreshToken: string;
+	refreshTokenExpiresAt: Date;
 	idToken: string;
 }

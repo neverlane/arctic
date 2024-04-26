@@ -1,5 +1,27 @@
 # arctic
 
+## 1.6.2
+
+### Patch changes
+
+- Use HTTP basic auth for sending client credentials if supported ([#113](https://github.com/pilcrowOnPaper/arctic/pull/113))
+
+## 1.6.1
+
+### Patch changes
+
+- Fix Roblox provider and reverted API changes introduced in 1.6.0 ([#111](https://github.com/pilcrowOnPaper/arctic/pull/111))
+
+## 1.6.0
+
+### Minor changes
+
+- Add Intuit provider. ([#97](https://github.com/pilcrowOnPaper/arctic/pull/97))
+
+### Patch changes
+
+- Fix Roblox provider (see docs for API changes) ([#110](https://github.com/pilcrowOnPaper/arctic/pull/110))
+
 ## 1.5.0
 
 ### Minor changes
