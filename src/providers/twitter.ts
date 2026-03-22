@@ -1,68 +1,43 @@
-import { OAuth2Client } from "oslo/oauth2";
+import { OAuth2Client, CodeChallengeMethod } from "../client.js";
 
-import type { OAuth2ProviderWithPKCE } from "../index.js";
+import type { OAuth2Tokens } from "../oauth2.js";
 
-const authorizeEndpoint = "https://twitter.com/i/oauth2/authorize";
+const authorizationEndpoint = "https://twitter.com/i/oauth2/authorize";
 const tokenEndpoint = "https://api.twitter.com/2/oauth2/token";
+const tokenRevocationEndpoint = "https://api.twitter.com/2/oauth2/revoke";
 
-export class Twitter implements OAuth2ProviderWithPKCE {
+export class Twitter {
 	private client: OAuth2Client;
-	private clientSecret: string;
 
-	constructor(clientId: string, clientSecret: string, redirectURI: string) {
-		this.client = new OAuth2Client(clientId, authorizeEndpoint, tokenEndpoint, {
-			redirectURI
-		});
-		this.clientSecret = clientSecret;
+	constructor(clientId: string, clientSecret: string | null, redirectURI: string) {
+		this.client = new OAuth2Client(clientId, clientSecret, redirectURI);
 	}
 
-	public async createAuthorizationURL(
-		state: string,
-		codeVerifier: string,
-		options?: {
-			scopes?: string[];
-		}
-	): Promise<URL> {
-		return await this.client.createAuthorizationURL({
+	public createAuthorizationURL(state: string, codeVerifier: string, scopes: string[]): URL {
+		const url = this.client.createAuthorizationURLWithPKCE(
+			authorizationEndpoint,
 			state,
+			CodeChallengeMethod.S256,
 			codeVerifier,
-			scopes: options?.scopes ?? []
-		});
+			scopes
+		);
+		return url;
 	}
 
 	public async validateAuthorizationCode(
 		code: string,
 		codeVerifier: string
-	): Promise<TwitterTokens> {
-		const result = await this.client.validateAuthorizationCode<TokenResponseBody>(code, {
-			credentials: this.clientSecret,
-			codeVerifier
-		});
-		const tokens: TwitterTokens = {
-			accessToken: result.access_token,
-			refreshToken: result.refresh_token ?? null
-		};
+	): Promise<OAuth2Tokens> {
+		const tokens = await this.client.validateAuthorizationCode(tokenEndpoint, code, codeVerifier);
 		return tokens;
 	}
 
-	public async refreshAccessToken(refreshToken: string): Promise<TwitterTokens> {
-		const result = await this.client.refreshAccessToken<TokenResponseBody>(refreshToken, {
-			credentials: this.clientSecret
-		});
-		const tokens: TwitterTokens = {
-			accessToken: result.access_token,
-			refreshToken: result.refresh_token ?? null
-		};
+	public async refreshAccessToken(refreshToken: string): Promise<OAuth2Tokens> {
+		const tokens = await this.client.refreshAccessToken(tokenEndpoint, refreshToken, []);
 		return tokens;
 	}
-}
 
-interface TokenResponseBody {
-	access_token: string;
-	refresh_token?: string;
-}
-
-export interface TwitterTokens {
-	accessToken: string;
-	refreshToken: string | null;
+	public async revokeToken(token: string): Promise<void> {
+		await this.client.revokeToken(tokenRevocationEndpoint, token);
+	}
 }

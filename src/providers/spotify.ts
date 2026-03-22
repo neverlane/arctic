@@ -1,67 +1,43 @@
-import { TimeSpan, createDate } from "oslo";
-import { OAuth2Client } from "oslo/oauth2";
+import { CodeChallengeMethod, OAuth2Client } from "../client.js";
 
-import type { OAuth2Provider } from "../index.js";
+import type { OAuth2Tokens } from "../oauth2.js";
 
-const authorizeEndpoint = "https://accounts.spotify.com/authorize";
+const authorizationEndpoint = "https://accounts.spotify.com/authorize";
 const tokenEndpoint = "https://accounts.spotify.com/api/token";
 
-export class Spotify implements OAuth2Provider {
+export class Spotify {
 	private client: OAuth2Client;
-	private clientSecret: string;
 
-	constructor(clientId: string, clientSecret: string, redirectURI: string) {
-		this.client = new OAuth2Client(clientId, authorizeEndpoint, tokenEndpoint, {
-			redirectURI
-		});
-		this.clientSecret = clientSecret;
+	constructor(clientId: string, clientSecret: string | null, redirectURI: string) {
+		this.client = new OAuth2Client(clientId, clientSecret, redirectURI);
 	}
 
-	public async createAuthorizationURL(
-		state: string,
-		options?: {
-			scopes?: string[];
+	public createAuthorizationURL(state: string, codeVerifier: string | null, scopes: string[]): URL {
+		let url: URL;
+		if (codeVerifier !== null) {
+			url = this.client.createAuthorizationURLWithPKCE(
+				authorizationEndpoint,
+				state,
+				CodeChallengeMethod.S256,
+				codeVerifier,
+				scopes
+			);
+		} else {
+			url = this.client.createAuthorizationURL(authorizationEndpoint, state, scopes);
 		}
-	): Promise<URL> {
-		return await this.client.createAuthorizationURL({
-			state,
-			scopes: options?.scopes ?? []
-		});
+		return url;
 	}
 
-	public async validateAuthorizationCode(code: string): Promise<SpotifyTokens> {
-		const result = await this.client.validateAuthorizationCode<TokenResponseBody>(code, {
-			credentials: this.clientSecret
-		});
-		const tokens: SpotifyTokens = {
-			accessToken: result.access_token,
-			refreshToken: result.refresh_token,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s"))
-		};
+	public async validateAuthorizationCode(
+		code: string,
+		codeVerifier: string | null
+	): Promise<OAuth2Tokens> {
+		const tokens = await this.client.validateAuthorizationCode(tokenEndpoint, code, codeVerifier);
 		return tokens;
 	}
 
-	public async refreshAccessToken(refreshToken: string): Promise<SpotifyTokens> {
-		const result = await this.client.refreshAccessToken<TokenResponseBody>(refreshToken, {
-			credentials: this.clientSecret
-		});
-		const tokens: SpotifyTokens = {
-			accessToken: result.access_token,
-			refreshToken: result.refresh_token,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s"))
-		};
+	public async refreshAccessToken(refreshToken: string): Promise<OAuth2Tokens> {
+		const tokens = await this.client.refreshAccessToken(tokenEndpoint, refreshToken, []);
 		return tokens;
 	}
-}
-
-interface TokenResponseBody {
-	access_token: string;
-	expires_in: number;
-	refresh_token: string;
-}
-
-export interface SpotifyTokens {
-	accessToken: string;
-	refreshToken: string;
-	accessTokenExpiresAt: Date;
 }

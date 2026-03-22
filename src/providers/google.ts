@@ -1,91 +1,43 @@
-import { TimeSpan, createDate } from "oslo";
-import { OAuth2Client } from "oslo/oauth2";
+import { OAuth2Client, CodeChallengeMethod } from "../client.js";
 
-import type { OAuth2ProviderWithPKCE } from "../index.js";
+import type { OAuth2Tokens } from "../oauth2.js";
 
-const authorizeEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
+const authorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
 const tokenEndpoint = "https://oauth2.googleapis.com/token";
+const tokenRevocationEndpoint = "https://oauth2.googleapis.com/revoke";
 
-export class Google implements OAuth2ProviderWithPKCE {
+export class Google {
 	private client: OAuth2Client;
-	private clientSecret: string;
 
 	constructor(clientId: string, clientSecret: string, redirectURI: string) {
-		this.client = new OAuth2Client(clientId, authorizeEndpoint, tokenEndpoint, {
-			redirectURI
-		});
-		this.clientSecret = clientSecret;
+		this.client = new OAuth2Client(clientId, clientSecret, redirectURI);
 	}
 
-	public async createAuthorizationURL(
-		state: string,
-		codeVerifier: string,
-		options?: {
-			scopes?: string[];
-		}
-	): Promise<URL> {
-		const scopes = options?.scopes ?? [];
-		return await this.client.createAuthorizationURL({
+	public createAuthorizationURL(state: string, codeVerifier: string, scopes: string[]): URL {
+		const url = this.client.createAuthorizationURLWithPKCE(
+			authorizationEndpoint,
 			state,
+			CodeChallengeMethod.S256,
 			codeVerifier,
-			scopes: [...scopes, "openid"]
-		});
+			scopes
+		);
+		return url;
 	}
 
 	public async validateAuthorizationCode(
 		code: string,
 		codeVerifier: string
-	): Promise<GoogleTokens> {
-		const result = await this.client.validateAuthorizationCode<AuthorizationCodeResponseBody>(
-			code,
-			{
-				authenticateWith: "request_body",
-				credentials: this.clientSecret,
-				codeVerifier
-			}
-		);
-		const tokens: GoogleTokens = {
-			accessToken: result.access_token,
-			refreshToken: result.refresh_token ?? null,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s")),
-			idToken: result.id_token
-		};
+	): Promise<OAuth2Tokens> {
+		const tokens = await this.client.validateAuthorizationCode(tokenEndpoint, code, codeVerifier);
 		return tokens;
 	}
 
-	public async refreshAccessToken(refreshToken: string): Promise<GoogleRefreshedTokens> {
-		const result = await this.client.refreshAccessToken<RefreshTokenResponseBody>(refreshToken, {
-			authenticateWith: "request_body",
-			credentials: this.clientSecret
-		});
-		const tokens: GoogleRefreshedTokens = {
-			accessToken: result.access_token,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s"))
-		};
+	public async refreshAccessToken(refreshToken: string): Promise<OAuth2Tokens> {
+		const tokens = await this.client.refreshAccessToken(tokenEndpoint, refreshToken, []);
 		return tokens;
 	}
-}
 
-interface AuthorizationCodeResponseBody {
-	access_token: string;
-	refresh_token?: string;
-	expires_in: number;
-	id_token: string;
-}
-
-interface RefreshTokenResponseBody {
-	access_token: string;
-	expires_in: number;
-}
-
-export interface GoogleTokens {
-	accessToken: string;
-	refreshToken: string | null;
-	accessTokenExpiresAt: Date;
-	idToken: string;
-}
-
-export interface GoogleRefreshedTokens {
-	accessToken: string;
-	accessTokenExpiresAt: Date;
+	public async revokeToken(token: string): Promise<void> {
+		await this.client.revokeToken(tokenRevocationEndpoint, token);
+	}
 }

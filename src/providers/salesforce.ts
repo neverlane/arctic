@@ -1,69 +1,50 @@
-import { OAuth2Client } from "oslo/oauth2";
+import { OAuth2Client, CodeChallengeMethod } from "../client.js";
 
-import type { OAuth2ProviderWithPKCE } from "../index.js";
+import type { OAuth2Tokens } from "../oauth2.js";
 
-export class Salesforce implements OAuth2ProviderWithPKCE {
+export class Salesforce {
+	private authorizationEndpoint: string;
+	private tokenEndpoint: string;
+	private tokenRevocationEndpoint: string;
+
 	private client: OAuth2Client;
-	private clientSecret: string;
 
-	constructor(clientId: string, clientSecret: string, redirectURI: string) {
-		const authorizeEndpoint = "https://login.salesforce.com/services/oauth2/authorize";
-		const tokenEndpoint = "https://login.salesforce.com/services/oauth2/token";
-
-		this.client = new OAuth2Client(clientId, authorizeEndpoint, tokenEndpoint, {
-			redirectURI
-		});
-		this.clientSecret = clientSecret;
+	constructor(domain: string, clientId: string, clientSecret: string | null, redirectURI: string) {
+		this.authorizationEndpoint = `https://${domain}/services/oauth2/authorize`;
+		this.tokenEndpoint = `https://${domain}/services/oauth2/token`;
+		this.tokenRevocationEndpoint = `https://${domain}/services/oauth2/revoke`;
+		this.client = new OAuth2Client(clientId, clientSecret, redirectURI);
 	}
 
-	public async createAuthorizationURL(
-		state: string,
-		codeVerifier: string,
-		options?: {
-			scopes?: string[];
-		}
-	): Promise<URL> {
-		return await this.client.createAuthorizationURL({
+	public createAuthorizationURL(state: string, codeVerifier: string, scopes: string[]): URL {
+		const url = this.client.createAuthorizationURLWithPKCE(
+			this.authorizationEndpoint,
 			state,
+			CodeChallengeMethod.S256,
 			codeVerifier,
-			scopes: options?.scopes ?? []
-		});
+			scopes
+		);
+		return url;
 	}
 
 	public async validateAuthorizationCode(
 		code: string,
 		codeVerifier: string
-	): Promise<SalesforceTokens> {
-		const result = await this.client.validateAuthorizationCode<TokenResponseBody>(code, {
-			credentials: this.clientSecret,
+	): Promise<OAuth2Tokens> {
+		const tokens = await this.client.validateAuthorizationCode(
+			this.tokenEndpoint,
+			code,
 			codeVerifier
-		});
-		return {
-			accessToken: result.access_token,
-			refreshToken: result.refresh_token ?? null,
-			idToken: result.id_token
-		};
+		);
+		return tokens;
 	}
 
-	public async refreshAccessToken(refreshToken: string): Promise<SalesforceTokens> {
-		const result = await this.client.refreshAccessToken<TokenResponseBody>(refreshToken, {
-			credentials: this.clientSecret
-		});
-		return {
-			accessToken: result.access_token,
-			refreshToken: result.refresh_token ?? null,
-			idToken: result.id_token
-		};
+	public async refreshAccessToken(refreshToken: string): Promise<OAuth2Tokens> {
+		const tokens = await this.client.refreshAccessToken(this.tokenEndpoint, refreshToken, []);
+		return tokens;
 	}
-}
 
-interface TokenResponseBody {
-	access_token: string;
-	refresh_token?: string;
-	id_token: string;
-}
-export interface SalesforceTokens {
-	accessToken: string;
-	idToken: string;
-	refreshToken: string | null;
+	public async revokeToken(token: string): Promise<void> {
+		await this.client.revokeToken(this.tokenRevocationEndpoint, token);
+	}
 }

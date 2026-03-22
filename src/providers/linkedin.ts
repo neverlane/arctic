@@ -1,74 +1,54 @@
-import { OAuth2Client } from "oslo/oauth2";
-import { TimeSpan, createDate } from "oslo";
+// LinkedIn doesn't seem to support HTTP Basic Auth
+import { createOAuth2Request, sendTokenRequest } from "../request.js";
 
-import type { OAuth2Provider } from "../index.js";
+import type { OAuth2Tokens } from "../oauth2.js";
 
-const authorizeEndpoint = "https://www.linkedin.com/oauth/v2/authorization";
+const authorizationEndpoint = "https://www.linkedin.com/oauth/v2/authorization";
 const tokenEndpoint = "https://www.linkedin.com/oauth/v2/accessToken";
 
-export class LinkedIn implements OAuth2Provider {
-	private client: OAuth2Client;
+export class LinkedIn {
+	private clientId: string;
 	private clientSecret: string;
+	private redirectURI: string;
 
 	constructor(clientId: string, clientSecret: string, redirectURI: string) {
-		this.client = new OAuth2Client(clientId, authorizeEndpoint, tokenEndpoint, {
-			redirectURI
-		});
+		this.clientId = clientId;
 		this.clientSecret = clientSecret;
+		this.redirectURI = redirectURI;
 	}
 
-	public async createAuthorizationURL(
-		state: string,
-		options?: {
-			scopes?: string[];
+	public createAuthorizationURL(state: string, scopes: string[]): URL {
+		const url = new URL(authorizationEndpoint);
+		url.searchParams.set("response_type", "code");
+		url.searchParams.set("client_id", this.clientId);
+		url.searchParams.set("state", state);
+		if (scopes.length > 0) {
+			url.searchParams.set("scope", scopes.join(" "));
 		}
-	): Promise<URL> {
-		const scopes = options?.scopes ?? [];
-		return await this.client.createAuthorizationURL({
-			state,
-			scopes: [...scopes, "openid"]
-		});
+		url.searchParams.set("redirect_uri", this.redirectURI);
+		return url;
 	}
 
-	public async validateAuthorizationCode(code: string): Promise<LinkedInTokens> {
-		const result = await this.client.validateAuthorizationCode<TokenResponseBody>(code, {
-			authenticateWith: "request_body",
-			credentials: this.clientSecret
-		});
-		const tokens: LinkedInTokens = {
-			accessToken: result.access_token,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s")),
-			refreshToken: result.refresh_token,
-			refreshTokenExpiresAt: createDate(new TimeSpan(result.refresh_token_expires_in, "s"))
-		};
+	public async validateAuthorizationCode(code: string): Promise<OAuth2Tokens> {
+		const body = new URLSearchParams();
+		body.set("grant_type", "authorization_code");
+		body.set("code", code);
+		body.set("redirect_uri", this.redirectURI);
+		body.set("client_id", this.clientId);
+		body.set("client_secret", this.clientSecret);
+		const request = createOAuth2Request(tokenEndpoint, body);
+		const tokens = await sendTokenRequest(request);
 		return tokens;
 	}
 
-	public async refreshAccessToken(accessToken: string): Promise<LinkedInTokens> {
-		const result = await this.client.refreshAccessToken<TokenResponseBody>(accessToken, {
-			authenticateWith: "request_body",
-			credentials: this.clientSecret
-		});
-		const tokens: LinkedInTokens = {
-			accessToken: result.access_token,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s")),
-			refreshToken: result.refresh_token,
-			refreshTokenExpiresAt: createDate(new TimeSpan(result.refresh_token_expires_in, "s"))
-		};
+	public async refreshAccessToken(refreshToken: string): Promise<OAuth2Tokens> {
+		const body = new URLSearchParams();
+		body.set("grant_type", "refresh_token");
+		body.set("refresh_token", refreshToken);
+		body.set("client_id", this.clientId);
+		body.set("client_secret", this.clientSecret);
+		const request = createOAuth2Request(tokenEndpoint, body);
+		const tokens = await sendTokenRequest(request);
 		return tokens;
 	}
-}
-
-interface TokenResponseBody {
-	access_token: string;
-	expires_in: number;
-	refresh_token: string;
-	refresh_token_expires_in: number;
-}
-
-export interface LinkedInTokens {
-	accessToken: string;
-	accessTokenExpiresAt: Date;
-	refreshToken: string;
-	refreshTokenExpiresAt: Date;
 }

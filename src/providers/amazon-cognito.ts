@@ -1,91 +1,51 @@
-import { TimeSpan, createDate } from "oslo";
-import { OAuth2Client } from "oslo/oauth2";
+import { CodeChallengeMethod, OAuth2Client } from "../client.js";
 
-import type { OAuth2ProviderWithPKCE } from "../index.js";
+import type { OAuth2Tokens } from "../oauth2.js";
 
-export class AmazonCognito implements OAuth2ProviderWithPKCE {
+export class AmazonCognito {
+	private authorizationEndpoint: string;
+	private tokenEndpoint: string;
+	private tokenRevocationEndpoint: string;
+
 	private client: OAuth2Client;
-	private clientSecret: string;
 
-	constructor(userPoolDomain: string, clientId: string, clientSecret: string, redirectURI: string) {
-		const authorizeEndpoint = userPoolDomain + "/oauth2/authorize";
-		const tokenEndpoint = userPoolDomain + "/oauth2/token";
-		this.client = new OAuth2Client(clientId, authorizeEndpoint, tokenEndpoint, {
-			redirectURI
-		});
-		this.clientSecret = clientSecret;
+	constructor(domain: string, clientId: string, clientSecret: string | null, redirectURI: string) {
+		this.authorizationEndpoint = `https://${domain}/oauth2/authorize`;
+		this.tokenEndpoint = `https://${domain}/oauth2/token`;
+		this.tokenRevocationEndpoint = `https://${domain}/oauth2/revoke`;
+
+		this.client = new OAuth2Client(clientId, clientSecret, redirectURI);
 	}
 
-	public async createAuthorizationURL(
-		state: string,
-		codeVerifier: string,
-		options?: {
-			scopes?: string[];
-		}
-	): Promise<URL> {
-		const scopes = options?.scopes ?? [];
-		return await this.client.createAuthorizationURL({
+	public createAuthorizationURL(state: string, codeVerifier: string, scopes: string[]): URL {
+		const url = this.client.createAuthorizationURLWithPKCE(
+			this.authorizationEndpoint,
 			state,
+			CodeChallengeMethod.S256,
 			codeVerifier,
-			scopes: [...scopes, "openid"]
-		});
+			scopes
+		);
+		return url;
 	}
 
 	public async validateAuthorizationCode(
 		code: string,
 		codeVerifier: string
-	): Promise<AmazonCognitoTokens> {
-		const result = await this.client.validateAuthorizationCode<AuthorizationCodeResponseBody>(
+	): Promise<OAuth2Tokens> {
+		const tokens = await this.client.validateAuthorizationCode(
+			this.tokenEndpoint,
 			code,
-			{
-				credentials: this.clientSecret,
-				codeVerifier
-			}
+			codeVerifier
 		);
-		const tokens: AmazonCognitoTokens = {
-			accessToken: result.access_token,
-			refreshToken: result.refresh_token,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s")),
-			idToken: result.id_token
-		};
 		return tokens;
 	}
 
-	public async refreshAccessToken(refreshToken: string): Promise<AmazonCognitoRefreshedTokens> {
-		const result = await this.client.refreshAccessToken<RefreshTokenResponseBody>(refreshToken, {
-			credentials: this.clientSecret
-		});
-		const tokens: AmazonCognitoRefreshedTokens = {
-			accessToken: result.access_token,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s")),
-			idToken: result.id_token
-		};
+	public async refreshAccessToken(refreshToken: string, scopes: string[]): Promise<OAuth2Tokens> {
+		const tokens = await this.client.refreshAccessToken(this.tokenEndpoint, refreshToken, scopes);
 		return tokens;
 	}
-}
 
-interface AuthorizationCodeResponseBody {
-	access_token: string;
-	refresh_token: string;
-	expires_in: number;
-	id_token: string;
-}
-
-interface RefreshTokenResponseBody {
-	access_token: string;
-	expires_in: number;
-	id_token: string;
-}
-
-export interface AmazonCognitoTokens {
-	accessToken: string;
-	refreshToken: string;
-	accessTokenExpiresAt: Date;
-	idToken: string;
-}
-
-export interface AmazonCognitoRefreshedTokens {
-	accessToken: string;
-	accessTokenExpiresAt: Date;
-	idToken: string;
+	public async revokeToken(token: string): Promise<void> {
+		await this.client.revokeToken(this.tokenRevocationEndpoint, token);
+	}
 }

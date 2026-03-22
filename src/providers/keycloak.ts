@@ -1,82 +1,55 @@
-import { OAuth2Client } from "oslo/oauth2";
-import { TimeSpan, createDate } from "oslo";
+import { CodeChallengeMethod, OAuth2Client } from "../client.js";
 
-import type { OAuth2ProviderWithPKCE } from "../index.js";
+import type { OAuth2Tokens } from "../oauth2.js";
 
-export class Keycloak implements OAuth2ProviderWithPKCE {
+export class KeyCloak {
+	private authorizationEndpoint: string;
+	private tokenEndpoint: string;
+	private tokenRevocationEndpoint: string;
+
 	private client: OAuth2Client;
-	private realmURL: string;
-	private clientSecret: string;
 
-	constructor(realmURL: string, clientId: string, clientSecret: string, redirectURI: string) {
-		this.realmURL = realmURL;
-		const authorizeEndpoint = this.realmURL + "/protocol/openid-connect/auth";
-		const tokenEndpoint = this.realmURL + "/protocol/openid-connect/token";
-		this.client = new OAuth2Client(clientId, authorizeEndpoint, tokenEndpoint, {
-			redirectURI
-		});
-		this.clientSecret = clientSecret;
+	constructor(
+		realmURL: string,
+		clientId: string,
+		clientSecret: string | null,
+		redirectURI: string
+	) {
+		this.authorizationEndpoint = realmURL + "/protocol/openid-connect/auth";
+		this.tokenEndpoint = realmURL + "/protocol/openid-connect/token";
+		this.tokenRevocationEndpoint = realmURL + "/protocol/openid-connect/revoke";
+		this.client = new OAuth2Client(clientId, clientSecret, redirectURI);
 	}
 
-	public async createAuthorizationURL(
-		state: string,
-		codeVerifier: string,
-		options?: {
-			scopes?: string[];
-		}
-	): Promise<URL> {
-		const scopes = options?.scopes ?? [];
-		return await this.client.createAuthorizationURL({
+	public createAuthorizationURL(state: string, codeVerifier: string, scopes: string[]): URL {
+		const url = this.client.createAuthorizationURLWithPKCE(
+			this.authorizationEndpoint,
 			state,
+			CodeChallengeMethod.S256,
 			codeVerifier,
-			scopes: [...scopes, "openid"]
-		});
+			scopes
+		);
+		return url;
 	}
+
 	public async validateAuthorizationCode(
 		code: string,
 		codeVerifier: string
-	): Promise<KeycloakTokens> {
-		const result = await this.client.validateAuthorizationCode<TokenResponseBody>(code, {
-			codeVerifier,
-			credentials: this.clientSecret
-		});
-		const tokens: KeycloakTokens = {
-			accessToken: result.access_token,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s")),
-			refreshToken: result.refresh_token,
-			refreshTokenExpiresAt: createDate(new TimeSpan(result.refresh_expires_in, "s")),
-			idToken: result.id_token
-		};
+	): Promise<OAuth2Tokens> {
+		const tokens = await this.client.validateAuthorizationCode(
+			this.tokenEndpoint,
+			code,
+			codeVerifier
+		);
 		return tokens;
 	}
 
-	public async refreshAccessToken(refreshToken: string): Promise<KeycloakTokens> {
-		const result = await this.client.refreshAccessToken<TokenResponseBody>(refreshToken, {
-			credentials: this.clientSecret
-		});
-		const tokens: KeycloakTokens = {
-			accessToken: result.access_token,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s")),
-			refreshToken: result.refresh_token,
-			refreshTokenExpiresAt: createDate(new TimeSpan(result.refresh_expires_in, "s")),
-			idToken: result.id_token
-		};
+	public async refreshAccessToken(refreshToken: string): Promise<OAuth2Tokens> {
+		const tokens = await this.client.refreshAccessToken(this.tokenEndpoint, refreshToken, []);
 		return tokens;
 	}
-}
 
-interface TokenResponseBody {
-	access_token: string;
-	refresh_token: string;
-	id_token: string;
-	expires_in: number;
-	refresh_expires_in: number;
-}
-
-export interface KeycloakTokens {
-	accessToken: string;
-	accessTokenExpiresAt: Date;
-	refreshToken: string | null;
-	refreshTokenExpiresAt: Date | null;
-	idToken: string;
+	public async revokeToken(token: string): Promise<void> {
+		await this.client.revokeToken(this.tokenRevocationEndpoint, token);
+	}
 }

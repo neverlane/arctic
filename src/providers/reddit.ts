@@ -1,67 +1,29 @@
-import { OAuth2Client } from "oslo/oauth2";
-import { TimeSpan, createDate } from "oslo";
+import { OAuth2Client } from "../client.js";
 
-import type { OAuth2Provider } from "../index.js";
+import type { OAuth2Tokens } from "../oauth2.js";
 
-const authorizeEndpoint = "https://www.reddit.com/api/v1/authorize";
+const authorizationEndpoint = "https://www.reddit.com/api/v1/authorize";
 const tokenEndpoint = "https://www.reddit.com/api/v1/access_token";
 
-export class Reddit implements OAuth2Provider {
+export class Reddit {
 	private client: OAuth2Client;
-	private clientSecret: string;
 
 	constructor(clientId: string, clientSecret: string, redirectURI: string) {
-		this.client = new OAuth2Client(clientId, authorizeEndpoint, tokenEndpoint, {
-			redirectURI
-		});
-		this.clientSecret = clientSecret;
+		this.client = new OAuth2Client(clientId, clientSecret, redirectURI);
 	}
 
-	public async createAuthorizationURL(
-		state: string,
-		options?: {
-			scopes?: string[];
-		}
-	): Promise<URL> {
-		return await this.client.createAuthorizationURL({
-			state,
-			scopes: options?.scopes ?? []
-		});
+	public createAuthorizationURL(state: string, scopes: string[]): URL {
+		const url = this.client.createAuthorizationURL(authorizationEndpoint, state, scopes);
+		return url;
 	}
 
-	public async validateAuthorizationCode(code: string): Promise<RedditTokens> {
-		const result = await this.client.validateAuthorizationCode<TokenResponseBody>(code, {
-			credentials: this.clientSecret
-		});
-		const tokens: RedditTokens = {
-			accessToken: result.access_token,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s")),
-			refreshToken: result.refresh_token ?? null
-		};
+	public async validateAuthorizationCode(code: string): Promise<OAuth2Tokens> {
+		const tokens = await this.client.validateAuthorizationCode(tokenEndpoint, code, null);
 		return tokens;
 	}
 
-	public async refreshAccessToken(refreshToken: string): Promise<RedditTokens> {
-		const result = await this.client.refreshAccessToken<TokenResponseBody>(refreshToken, {
-			credentials: this.clientSecret
-		});
-		const tokens: RedditTokens = {
-			accessToken: result.access_token,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s")),
-			refreshToken: result.refresh_token ?? null
-		};
+	public async refreshAccessToken(refreshToken: string): Promise<OAuth2Tokens> {
+		const tokens = await this.client.refreshAccessToken(tokenEndpoint, refreshToken, []);
 		return tokens;
 	}
-}
-
-interface TokenResponseBody {
-	access_token: string;
-	refresh_token?: string;
-	expires_in: number;
-}
-
-export interface RedditTokens {
-	accessToken: string;
-	refreshToken: string | null;
-	accessTokenExpiresAt: Date;
 }

@@ -1,46 +1,32 @@
-import { OAuth2Client } from "oslo/oauth2";
-import type { OAuth2ProviderWithPKCE } from "../index.js";
+import { OAuth2Client, CodeChallengeMethod } from "../client.js";
 
-const authorizeEndpoint = "https://lichess.org/oauth";
+import type { OAuth2Tokens } from "../oauth2.js";
+
+const authorizationEndpoint = "https://lichess.org/oauth";
 const tokenEndpoint = "https://lichess.org/api/token";
 
-export class Lichess implements OAuth2ProviderWithPKCE {
+export class Lichess {
 	private client: OAuth2Client;
 
 	constructor(clientId: string, redirectURI: string) {
-		this.client = new OAuth2Client(clientId, authorizeEndpoint, tokenEndpoint, {
-			redirectURI
-		});
+		this.client = new OAuth2Client(clientId, null, redirectURI);
 	}
-
-	public async createAuthorizationURL(
-		state: string,
-		codeVerifier: string,
-		options?: {
-			scopes?: string[];
-		}
-	): Promise<URL> {
-		return await this.client.createAuthorizationURL({
+	public createAuthorizationURL(state: string, codeVerifier: string, scopes: string[]): URL {
+		const url = this.client.createAuthorizationURLWithPKCE(
+			authorizationEndpoint,
 			state,
-			scopes: options?.scopes ?? [],
-			codeVerifier
-		});
+			CodeChallengeMethod.S256,
+			codeVerifier,
+			scopes
+		);
+		return url;
 	}
 
 	public async validateAuthorizationCode(
 		code: string,
 		codeVerifier: string
-	): Promise<LichessTokens> {
-		const result = await this.client.validateAuthorizationCode(code, {
-			codeVerifier
-		});
-		const tokens: LichessTokens = {
-			accessToken: result.access_token
-		};
+	): Promise<OAuth2Tokens> {
+		const tokens = await this.client.validateAuthorizationCode(tokenEndpoint, code, codeVerifier);
 		return tokens;
 	}
-}
-
-export interface LichessTokens {
-	accessToken: string;
 }

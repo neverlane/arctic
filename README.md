@@ -1,23 +1,29 @@
 # Arctic
 
-Arctic is an OAuth 2.0 library for JavaScript/TypeScript that supports numerous providers. It's light weight, fully-typed, and runtime-agnostic. [Read the documentation →](https://arctic.js.org)
+**Documentation: [arcticjs.dev](https://arcticjs.dev)**
 
-```ts
-import { GitHub, generateState } from "arctic";
+Arctic is a collection of OAuth 2.0 clients for popular providers. Only the authorization code flow is supported. Built on top of the Fetch API, it's light weight, fully-typed, and runtime-agnostic.
 
-const github = new GitHub(clientId, clientSecret);
-
-const state = generateState();
-const authorizationURL = await github.createAuthorizationURL(state, {
-	scopes: ["user:email"]
-});
-
-const tokens = await github.validateAuthorizationCode(code);
+```
+npm install arctic
 ```
 
-For a flexible OAuth 2.0 client, see [`oslo/oauth2`](http://github.com/pilcrowonpaper/oslo).
+```ts
+import * as arctic from "arctic";
 
-> Arctic only supports providers that strictly follow the OAuth 2.0 spec (including PKCE).
+const github = new arctic.GitHub(clientId, clientSecret, redirectURI);
+
+const state = arctic.generateState();
+const scopes = ["user:email"];
+const authorizationURL = github.createAuthorizationURL(state, scopes);
+
+// ...
+
+const tokens = await github.validateAuthorizationCode(code);
+const accessToken = tokens.accessToken();
+```
+
+> Arctic only supports providers that follow the OAuth 2.0 spec (including PKCE and token revocation).
 
 ## Semver
 
@@ -25,42 +31,61 @@ Arctic does not strictly follow semantic versioning. While we aim to only introd
 
 ## Supported providers
 
+- 42 School
 - Amazon Cognito
 - AniList
 - Apple
 - Atlassian
 - Auth0
+- Authentik
+- Autodesk Platform Services
+- Battle.net
 - Bitbucket
 - Box
+- Bungie
 - Coinbase
 - Discord
+- DonationAlerts
 - Dribbble
 - Dropbox
+- Etsy
+- Epic Games
 - Facebook
 - Figma
-- Github
+- Gitea
+- GitHub
 - GitLab
 - Google
 - Intuit
 - Kakao
-- Keycloak
+- KeyCloak
+- Kick
 - Lichess
 - Line
 - Linear
 - LinkedIn
+- Mastodon
+- MercadoLibre
+- MercadoPago
 - Microsoft Entra ID
 - MyAnimeList
+- Naver
 - Notion
 - Okta
 - osu!
 - Patreon
+- Polar
 - Reddit
 - Roblox
 - Salesforce
 - Shikimori
 - Slack
 - Spotify
+- Start.gg
 - Strava
+- Synology
+- TikTok
+- Tiltify
 - Tumblr
 - Twitch
 - Twitter

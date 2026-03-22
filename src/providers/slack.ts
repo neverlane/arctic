@@ -1,52 +1,24 @@
-import { OAuth2Client } from "oslo/oauth2";
+import { OAuth2Client } from "../client.js";
 
-import type { OAuth2Provider } from "../index.js";
+import type { OAuth2Tokens } from "../oauth2.js";
 
-const authorizeEndpoint = "https://slack.com/openid/connect/authorize";
+const authorizationEndpoint = "https://slack.com/openid/connect/authorize";
 const tokenEndpoint = "https://slack.com/api/openid.connect.token";
 
-export class Slack implements OAuth2Provider {
+export class Slack {
 	private client: OAuth2Client;
-	private clientSecret: string;
 
-	constructor(clientId: string, clientSecret: string, redirectURI: string) {
-		this.client = new OAuth2Client(clientId, authorizeEndpoint, tokenEndpoint, {
-			redirectURI
-		});
-		this.clientSecret = clientSecret;
+	constructor(clientId: string, clientSecret: string, redirectURI: string | null) {
+		this.client = new OAuth2Client(clientId, clientSecret, redirectURI);
 	}
 
-	public async createAuthorizationURL(
-		state: string,
-		options?: {
-			scopes?: string[];
-		}
-	): Promise<URL> {
-		const scopes = options?.scopes ?? [];
-		return await this.client.createAuthorizationURL({
-			state,
-			scopes: [...scopes, "openid"]
-		});
+	public createAuthorizationURL(state: string, scopes: string[]): URL {
+		const url = this.client.createAuthorizationURL(authorizationEndpoint, state, scopes);
+		return url;
 	}
 
-	public async validateAuthorizationCode(code: string): Promise<SlackTokens> {
-		const result = await this.client.validateAuthorizationCode<TokenResponseBody>(code, {
-			credentials: this.clientSecret
-		});
-		const tokens: SlackTokens = {
-			accessToken: result.access_token,
-			idToken: result.id_token
-		};
+	public async validateAuthorizationCode(code: string): Promise<OAuth2Tokens> {
+		const tokens = await this.client.validateAuthorizationCode(tokenEndpoint, code, null);
 		return tokens;
 	}
-}
-
-interface TokenResponseBody {
-	access_token: string;
-	id_token: string;
-}
-
-export interface SlackTokens {
-	accessToken: string;
-	idToken: string;
 }

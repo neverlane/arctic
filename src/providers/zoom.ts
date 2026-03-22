@@ -1,70 +1,43 @@
-import { TimeSpan, createDate } from "oslo";
-import { OAuth2Client } from "oslo/oauth2";
+import { OAuth2Client, CodeChallengeMethod } from "../client.js";
 
-import type { OAuth2ProviderWithPKCE } from "../index.js";
+import type { OAuth2Tokens } from "../oauth2.js";
 
-const authorizeEndpoint = "https://zoom.us/oauth/authorize";
+const authorizationEndpoint = "https://zoom.us/oauth/authorize";
 const tokenEndpoint = "https://zoom.us/oauth/token";
+const tokenRevocationEndpoint = "https://zoom.us/oauth/revoke";
 
-export class Zoom implements OAuth2ProviderWithPKCE {
+export class Zoom {
 	private client: OAuth2Client;
-	private clientSecret: string;
 
 	constructor(clientId: string, clientSecret: string, redirectURI: string) {
-		this.client = new OAuth2Client(clientId, authorizeEndpoint, tokenEndpoint, {
-			redirectURI
-		});
-		this.clientSecret = clientSecret;
+		this.client = new OAuth2Client(clientId, clientSecret, redirectURI);
 	}
 
-	public async createAuthorizationURL(
-		state: string,
-		codeVerifier: string,
-		options?: {
-			scopes?: string[];
-		}
-	): Promise<URL> {
-		return await this.client.createAuthorizationURL({
+	public createAuthorizationURL(state: string, codeVerifier: string, scopes: string[]): URL {
+		const url = this.client.createAuthorizationURLWithPKCE(
+			authorizationEndpoint,
 			state,
+			CodeChallengeMethod.S256,
 			codeVerifier,
-			scopes: options?.scopes ?? []
-		});
+			scopes
+		);
+		return url;
 	}
 
-	public async validateAuthorizationCode(code: string, codeVerifier: string): Promise<ZoomTokens> {
-		const result = await this.client.validateAuthorizationCode<TokenResponseBody>(code, {
-			credentials: this.clientSecret,
-			codeVerifier
-		});
-		const tokens: ZoomTokens = {
-			accessToken: result.access_token,
-			refreshToken: result.refresh_token,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s"))
-		};
+	public async validateAuthorizationCode(
+		code: string,
+		codeVerifier: string
+	): Promise<OAuth2Tokens> {
+		const tokens = await this.client.validateAuthorizationCode(tokenEndpoint, code, codeVerifier);
 		return tokens;
 	}
 
-	public async refreshAccessToken(refreshToken: string): Promise<ZoomTokens> {
-		const result = await this.client.refreshAccessToken<TokenResponseBody>(refreshToken, {
-			credentials: this.clientSecret
-		});
-		const tokens: ZoomTokens = {
-			accessToken: result.access_token,
-			refreshToken: result.refresh_token,
-			accessTokenExpiresAt: createDate(new TimeSpan(result.expires_in, "s"))
-		};
+	public async refreshAccessToken(refreshToken: string): Promise<OAuth2Tokens> {
+		const tokens = await this.client.refreshAccessToken(tokenEndpoint, refreshToken, []);
 		return tokens;
 	}
-}
 
-interface TokenResponseBody {
-	access_token: string;
-	refresh_token: string;
-	expires_in: number;
-}
-
-export interface ZoomTokens {
-	accessToken: string;
-	refreshToken: string;
-	accessTokenExpiresAt: Date;
+	public async revokeToken(token: string): Promise<void> {
+		await this.client.revokeToken(tokenRevocationEndpoint, token);
+	}
 }
